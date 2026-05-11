@@ -9,7 +9,6 @@ load_dotenv()
 db = SQLDatabase.from_uri("sqlite:///nfl.db")
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
-
 class AgentState(TypedDict):
     question: str #The question asked by the user
     sql: str
@@ -49,7 +48,7 @@ def generate_fixed_sql(state: AgentState):
     return {"sql": response.content.strip()}
 
 def should_fix_or_answer(state: AgentState):
-    if state.get("error") != "":
+    if state.get("error"):
         return "fix_sql"
     return "done"
 
@@ -58,10 +57,10 @@ research_graph.add_node("generate_sql", generate_sql)
 research_graph.add_node("execute_sql", execute_sql)
 research_graph.add_node("generate_fixed_sql", generate_fixed_sql)
 
-research_graph.set_entry_point("general_sql")
+research_graph.set_entry_point("generate_sql")
 research_graph.add_edge("generate_sql", "execute_sql")
-research_graph.add_conditional_edges("execute_sql", should_fix_or_answer, {"fix_sql": "fix_sql", "done": END})
-research_graph.add_edge("fix_sql", "execute_sql")
+research_graph.add_conditional_edges("execute_sql", should_fix_or_answer, {"fix_sql": "generate_fixed_sql", "done": END})
+research_graph.add_edge("generate_fixed_sql", "execute_sql")
 
 research_agent = research_graph.compile()
 
@@ -87,3 +86,16 @@ supervisor_agent.add_edge("research_agent", "writing_agent")
 supervisor_agent.add_edge("writing_agent", END)
 
 app = supervisor_agent.compile()
+
+if __name__ == "__main__":
+    print("Ask information about NFL statistics (type quit to exit).\n")
+    while True:
+        question = input("You: ").strip()
+        if question.lower() in ("quit", "exit"):
+            break
+        if not question:
+            continue
+        result = app.invoke({"question": question})
+        print(f"\nAnswer: {result['answer']}\n")
+        print(f"SQL Used: {result['sql']}")
+        print(f"\nRaw Result: {result['result']}\n")
